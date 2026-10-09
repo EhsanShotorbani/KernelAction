@@ -323,7 +323,7 @@ jobs:
         run: |
           curl -LSs "${{ env.additional_script_link }}" | bash
 
-      # -----------------------------------------------------------
+           # -----------------------------------------------------------
       # Kali NetHunter 4.19 Patches & Defconfig Additions
       # -----------------------------------------------------------
       - name: "Apply Kali NetHunter 4.19 Patches & Configs"
@@ -331,6 +331,14 @@ jobs:
         env:
           arch: ${{ steps.generate-args.outputs.ARCH }}
         run: |
+          echo "=========================================="
+          echo "   Fixing Marvell SDIO ID Header Bug      "
+          echo "=========================================="
+          # Fix missing SDIO_DEVICE_ID_MARVELL_8887_WLAN definition in kernel tree
+          grep -q "SDIO_DEVICE_ID_MARVELL_8887_WLAN" include/linux/mmc/sdio_ids.h || \
+            echo -e "#define SDIO_DEVICE_ID_MARVELL_8887_WLAN 0x9135" >> include/linux/mmc/sdio_ids.h
+          sed -i '1s/^/#define SDIO_DEVICE_ID_MARVELL_8887_WLAN 0x9135\n/' drivers/mmc/core/quirks.h 2>/dev/null || true
+
           echo "=========================================="
           echo "   Cloning Kali NetHunter Kernel Patches  "
           echo "=========================================="
@@ -399,6 +407,7 @@ jobs:
           EOF
 
           echo "Kali NetHunter patches and defconfig additions applied successfully!"
+
 
       - name: "Make defconfig"
         working-directory: ${{ env.KERNEL_NAME }}
