@@ -193,7 +193,6 @@ jobs:
           echo -e "\n ! Kernel is at commit: $(git -C $KERNEL_NAME rev-parse HEAD)\n"
           echo "Clone kernel source => ($KERNEL_REPO)"
           echo "KERNEL_COMMIT_HASH=$(git -C $KERNEL_NAME rev-parse HEAD)" >> $GITHUB_OUTPUT
-          echo "KERNEL_COMMIT_HASH=$(git -C $KERNEL_NAME rev-parse HEAD)" >> $GITHUB_OUTPUT
       - name: "Get toolchains"
         env:
           toolchains: "${{ toJSON(matrix.repos.toolchains) }}"
@@ -323,6 +322,84 @@ jobs:
         if: ${{ env.additional_script_link != 'disabled' }}
         run: |
           curl -LSs "${{ env.additional_script_link }}" | bash
+
+      # -----------------------------------------------------------
+      # Kali NetHunter 4.19 Patches & Defconfig Additions
+      # -----------------------------------------------------------
+      - name: "Apply Kali NetHunter 4.19 Patches & Configs"
+        working-directory: ${{ env.KERNEL_NAME }}
+        env:
+          arch: ${{ steps.generate-args.outputs.ARCH }}
+        run: |
+          echo "=========================================="
+          echo "   Cloning Kali NetHunter Kernel Patches  "
+          echo "=========================================="
+          git clone --depth=1 https://gitlab.com/kalilinux/nethunter/build-scripts/kali-nethunter-kernel.git /tmp/nh-patches
+
+          PATCH_DIR="/tmp/nh-patches/patches/4.19"
+
+          echo "Applying Wi-Fi Injection Patch..."
+          patch -p1 --forward < "$PATCH_DIR/add-wifi-injection-4.19.patch" || echo "[!] Wi-Fi injection patch already applied or had minor conflicts"
+
+          echo "Applying ath9k naming conflict fix..."
+          patch -p1 --forward < "$PATCH_DIR/fix-ath9k-naming-conflict.patch" || echo "[!] ath9k fix skipped"
+
+          echo "Applying RTL88xxAU (RTL8812AU / RTL8814AU) driver patch..."
+          patch -p1 --forward < "$PATCH_DIR/add-rtl88xxau-5.6.4.2-drivers.patch" || echo "[!] rtl88xxau patch skipped"
+
+          echo "Applying RTW88 driver patch..."
+          patch -p1 --forward < "$PATCH_DIR/add-rtw88-drivers-4.19.patch" || echo "[!] rtw88 patch skipped"
+
+          echo "Applying TP-Link UB500 Bluetooth patch..."
+          patch -p1 --forward < "$PATCH_DIR/add-ub500-to-btusb.patch" || echo "[!] btusb patch skipped"
+
+          rm -rf /tmp/nh-patches
+
+          echo "=========================================="
+          echo "       Injecting NetHunter Defconfigs     "
+          echo "=========================================="
+          DEFCONFIG_PATH="arch/${arch}/configs/${{ env.DEFCONFIG_NAME }}"
+
+          cat << 'EOF' >> "$DEFCONFIG_PATH"
+
+          # ----------------------------------------
+          # Kali NetHunter 4.19 Configuration Flags
+          # ----------------------------------------
+          # 1. Packet Injection & Wireless Monitor Mode
+          CONFIG_CFG80211=y
+          CONFIG_CFG80211_WEXT=y
+          CONFIG_MAC80211=y
+          CONFIG_MAC80211_LEDS=y
+          CONFIG_MAC80211_MESH=y
+
+          # 2. USB HID Gadget (BadUSB / DuckHunter)
+          CONFIG_USB_CONFIGFS_F_HID=y
+          CONFIG_USB_F_HID=y
+
+          # 3. USB Ethernet Gadgets (Drive-by / RNDIS / CDC ECM)
+          CONFIG_USB_CONFIGFS_RNDIS=y
+          CONFIG_USB_CONFIGFS_ECM=y
+
+          # 4. External USB Wi-Fi Drivers (Atheros, Ralink, Realtek)
+          CONFIG_ATH9K_HTC=m
+          CONFIG_RTL8187=m
+          CONFIG_RT2800USB=m
+          CONFIG_RT2X00=m
+          CONFIG_RTL88XXAU=m
+          CONFIG_RTL8XXXU=m
+          CONFIG_RTL8188EU=m
+
+          # 5. Core NetHunter / Chroot Requirements
+          CONFIG_SYSVIPC=y
+          CONFIG_NAMESPACES=y
+          CONFIG_NETFILTER=y
+          CONFIG_TUN=y
+          CONFIG_PACKET=y
+          CONFIG_DEVPTS_MULTIPLE_INSTANCES=y
+          EOF
+
+          echo "Kali NetHunter patches and defconfig additions applied successfully!"
+
       - name: "Make defconfig"
         working-directory: ${{ env.KERNEL_NAME }}
         env:
